@@ -30,6 +30,7 @@ Work in progress personal project bot
 |Remove| del, delete| Tag Name | Deletes specified tag, if owned by user passing the command
 |Edit | change| Tag Name, New Content | Edits specified tag's content
 |Owner| creator | Tag Name | Displays owner of specified tag|
+|**Forceremove|fm, forcedelete| Tag Name | Force removes a tag the admin doesnt own |
 |List| None | User(optional) | Displays users tags; If no user displays tags of user who invoked the command
 | Search | find | Tag Name(wildcard)| Find all tags when name similar to the one specified|
 |Search Content | | Content | Finds all tags with similar content 
