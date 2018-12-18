@@ -69,6 +69,8 @@ class ArchBot(commands.Bot):
 		elif isinstance(exc, commands.CommandInvokeError):
 			msg = str(exc)
 			color = discord.Color.orange()
+		elif isinstance(exc, commands.CommandNotFound):
+			return #Don't care about this error, way too spammy
 		elif isinstance(exc, commands.CommandError):
 			msg = str(exc)
 			color = discord.Color.orange()
