@@ -6,6 +6,7 @@ db_name = 'archbot'
 class Database:
 	def __init__(self, dbname):
 		self.connection = sqlite3.connect(dbname + ".db") #create connection/database
+		self.connection.row_factory = sqlite3.Row
 		self.cursor = self.connection.cursor()
 
 	async def query(self, query, params):
