@@ -138,10 +138,5 @@ class Moderation():
 			await self.db.exec(sql_del, (user.id, ctx.guild.id, c))
 			await ctx.send(":white_check_mark: Command `{}` is now enabled for `{}`".format(c, user))
 
-	@commands.command()
-	async def test(self, ctx):
-		"""Command used for testing"""
-		await ctx.send("TEST COMMAND")
-
 def setup(bot):
 	bot.add_cog(Moderation(bot))
