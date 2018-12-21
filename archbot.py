@@ -9,7 +9,7 @@ from discord.ext import commands
 from utils.database import *
 from utils.funcs import Funcs
 
-extensions = ['cogs.moderation', 'cogs.tags']
+extensions = ['cogs.moderation', 'cogs.tags', 'cogs.botcontrol']
 
 async def call_prefix(bot, msg):
 	"""function to call prefix for server specific prefixes
@@ -84,3 +84,4 @@ class ArchBot(commands.Bot):
 			super().run(self.token)
 		except Exception as e:
 			print(e)
+
