@@ -23,39 +23,15 @@ class Database:
 			print(e)
 
 	def setup(self):
-		#Create `tags` table if it doesn't exist
-		self.cursor.execute("""CREATE TABLE IF NOT EXISTS tags (
-							user integer,
-							tag text,
-							content text,
-							server integer,
-							global integer
-							)""")
-
-		#Create blacklisted user table if it doesn't exit
-		self.cursor.execute("""CREATE TABLE IF NOT EXISTS blacklist (
-							user integer,
-							server integer
-							)""")
-
-		#Create blacklisted user table if it doesn't exit
-		self.cursor.execute("""CREATE TABLE IF NOT EXISTS user_commands (
-							user integer,
-							server integer,
-							cmd text
-							)""")
-
-		#Create blacklisted user table if it doesn't exit
-		self.cursor.execute("""CREATE TABLE IF NOT EXISTS server_commands (
-							server integer,
-							cmd text
-							)""")
-
-		#Create prefix table if it doesnt exist
-		self.cursor.execute("""CREATE TABLE IF NOT EXISTS prefix (
-								prefix text,
-								server integer
-								)""")
+		"""Creates all tables if they do not exist"""
+		self.cursor.executescript("""
+			CREATE TABLE IF NOT EXISTS global_tags (user integer, tag text, content text, server integer);
+			CREATE TABLE IF NOT EXISTS server_tags (user integer, tag text, content text, server integer);
+			CREATE TABLE IF NOT EXISTS blacklist (user integer, server integer);
+			CREATE TABLE IF NOT EXISTS user_commands (user integer, server integer, cmd text);
+			CREATE TABLE IF NOT EXISTS server_commands (server integer, cmd text);
+			CREATE TABLE IF NOT EXISTS prefix (prefix text, server integer);
+			""")
 
 		self.connection.commit()
 	
