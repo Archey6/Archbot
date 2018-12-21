@@ -84,12 +84,7 @@ class Tags:
 		for i in result:
 			item += 1 
 			total += 1 
-			#print(i['tag'])
-			# #checks if tag is a server tag	
-			# if i['global'] == 0 and i['server'] == ctx.guild.id:
-			# 	server_tag = '  `(Server Tag)`\n'
-			# else:
-			# 	server_tag = '\n'
+			
 			if i['tag'] == old_tag:
 				server_tag = '  `(Server Tag)`\n'
 			else:
