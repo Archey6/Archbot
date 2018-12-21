@@ -12,55 +12,51 @@ class Tags:
 		self.bot = bot
 		self.db = Database(db_name)
 		self.funcs = Funcs()
-		self.GLOBAL_TRUE = 1
-		self.GLOBAL_FALSE = 0
 
 		self.reactions = ['⏮', '⏪', '⏩', '⏭', '🆗']
 
-	async def get_tag(self, tag, glb: int, server=None):
-		if server is None:
-			sql_q = "SELECT * FROM tags WHERE tag=? AND global=?"
-			result = await self.db.query(sql_q, (tag, glb))
-		else:
-			sql_q = "SELECT * FROM tags WHERE tag=? AND server=? AND global=?"
-			result = await self.db.query(sql_q, (tag, server, glb))
-
+	async def get_global_tag(self, tag):
+		sql_q = "SELECT * FROM global_tags WHERE tag=?"
+		result = await self.db.query(sql_q, (tag,)) 
 		return result.fetchall()
 
-	async def tag_exists(self, ctx, tag, global_with_server: bool):
-		is_server = await self.get_tag(tag, self.GLOBAL_FALSE, ctx.guild.id)
+	async def get_global_server_tag(self, tag, server):
+		sql_q = "SELECT * FROM global_tags WHERE tag=? AND server=?"
+		result = await self.db.query(sql_q, (tag, server))
+		return result.fetchall()
 
-		if global_with_server:
-			is_global = await self.get_tag(tag, self.GLOBAL_TRUE, ctx.guild.id)
+	async def get_server_tag(self, tag, server):
+		sql_q = "SELECT * FROM server_tags WHERE tag=? AND server=?"
+		result = await self.db.query(sql_q, (tag, server))
+		return result.fetchall()
+
+	async def tag_table(self, tag, guild):
+		if await self.get_server_tag(tag, guild):
+			return 'server'
+		elif await self.get_global_server_tag(tag, guild):
+			return 'global'
+		elif await self.get_global_tag(tag):
+			return 'global'
 		else:
-			is_global = await self.get_tag(tag, self.GLOBAL_TRUE)
+			return False	
 
-		if not is_global and not is_server:
-				await ctx.send(":no_entry: Tag `{}` does not exist!".format(tag))
-				return False
-		return True
-
-
-	async def tag_add(self, user, tag, content, server, glb: int):
-		sql_in = "INSERT INTO tags VALUES (?, ?, ?, ?, ?)"
-		await self.db.exec(sql_in, (user, tag, content, server, glb))
-
-	async def get_owner(self, ctx, tag):
-		is_global = await self.get_tag(tag, self.GLOBAL_TRUE)
-		is_server = await self.get_tag(tag, self.GLOBAL_FALSE, ctx.guild.id)
+	async def get_owner(self, author_id, tag, server):
+		is_global = await self.get_global_tag(tag)
+		is_server = await self.get_server_tag(tag, server)
 		if is_server:
-			return is_server[0][0] == ctx.author.id
+			return is_server[0][0] == author_id
 		elif is_global:
-			return is_global[0][0] == ctx.author.id
+			return is_global[0][0] == author_id
 		return False
 
 	async def list_tags(self, ctx, user_input, search_type: str):
-		if search_type == 'tag':
-			sql_q = "SELECT * FROM tags WHERE server=? AND tag LIKE ?"
-		elif search_type == 'content':
-			sql_q = "SELECT * FROM tags WHERE server=? AND content LIKE ?"
+		sql_q = """
+				SELECT * FROM server_tags WHERE {} LIKE ?
+				UNION
+				SELECT * FROM global_tags WHERE {} LIKE ?
+				""".format(search_type, search_type)
 
-		result = await self.db.query(sql_q, (ctx.guild.id, '%'+user_input+'%'))
+		result = await self.db.query(sql_q, ('%'+user_input+'%', '%'+user_input+'%'))
 		result = result.fetchall()
 
 		if not result:
@@ -70,7 +66,7 @@ class Tags:
 			return result
 
 	async def create_embed(self, ctx, result, *, member=None):
-		embed = discord.Embed()
+		embed = discord.Embed(color=discord.Color.blue())
 
 		if member is not None:
 			if not result:
@@ -84,15 +80,21 @@ class Tags:
 		total = 0
 		tag_list = [None] * ((len(result) // list_len) + 1) #Initializes a list with how many pages were need, as list indices
 		lst = []
+		old_tag = None
 		for i in result:
 			item += 1 
 			total += 1 
-
-			#checks if tag is a server tag	
-			if i['global'] == 0 and i['server'] == ctx.guild.id:
+			#print(i['tag'])
+			# #checks if tag is a server tag	
+			# if i['global'] == 0 and i['server'] == ctx.guild.id:
+			# 	server_tag = '  `(Server Tag)`\n'
+			# else:
+			# 	server_tag = '\n'
+			if i['tag'] == old_tag:
 				server_tag = '  `(Server Tag)`\n'
 			else:
-				server_tag = '\n'
+			 	server_tag = '\n'
+			old_tag = i['tag']
 
 			#adds each item to a list to be added to an index later	
 			lst.append('{}. "{}"{}'.format(str(item), i['tag'], server_tag)) 
@@ -107,40 +109,48 @@ class Tags:
 			tag_list[page] = tag_str
 
 			#Default page, used to increment later
-			display_page = 0
+		display_page = 0
 
 		embed.add_field(name='Tag List', value=tag_list[display_page])
+		embed.set_footer(text=str("{}/{} Tags").format(tag_list[display_page].count('\n'),total))
 		msg = await ctx.send(embed=embed)
 		for e in self.reactions:
 			await msg.add_reaction(e)
 
 		def check(reaction, user):
-			return user.id == ctx.author.id and str(reaction.emoji) in self.reactions
+			return user.id == ctx.author.id and str(reaction.emoji) in self.reactions and reaction.message.id == msg.id
 
 		while True:
 			try:
-				reaction, user = await self.bot.wait_for('reaction_add', timeout=60, check=check)
+				reaction, user = await self.bot.wait_for('reaction_add', timeout=10, check=check)
 
+				#await msg.remove_reaction(reaction.emoji, user)
+				
 				if reaction.emoji == '🆗':
+					await msg.delete()
 					break
 					return
 				elif reaction.emoji == '⏮':
 					display_page = 0
 					embed.set_field_at(0, name='Tag List', value=tag_list[display_page])
+					embed.set_footer(text=str("{}/{} Tags").format(tag_list[display_page].count('\n'), total))
 					await msg.edit(embed=embed)
 				elif reaction.emoji == '⏪':
 					if display_page > 0:
 						display_page -= 1
 						embed.set_field_at(0, name='Tag List', value=tag_list[display_page])
+						embed.set_footer(text=str("{}/{} Tags").format(tag_list[display_page].count('\n'), total))
 					await msg.edit(embed=embed)
 				elif reaction.emoji == '⏩':
 					if display_page != len(tag_list) - 1:
 						display_page += 1
 					embed.set_field_at(0, name='Tag List', value=tag_list[display_page])
+					embed.set_footer(text=str("{}/{} Tags").format(tag_list[display_page].count('\n')+(display_page*20)+1, total))
 					await msg.edit(embed=embed)
 				elif reaction.emoji == '⏭':
 					display_page = len(tag_list) - 1
 					embed.set_field_at(0, name='Tag List', value=tag_list[display_page])
+					embed.set_footer(text=str("{}/{} Tags").format(tag_list[display_page].count('\n')+(display_page*20)+1, total))
 					await msg.edit(embed=embed)
 			except asyncio.TimeoutError:
 				break
@@ -150,71 +160,81 @@ class Tags:
 	async def tag(self, ctx, tag: TagName):
 		"""If no server tag exists, display global tag"""
 		tag = await TagName().convert(ctx, tag)
-		is_global = await self.get_tag(tag, self.GLOBAL_TRUE)
-		is_server = await self.get_tag(tag, self.GLOBAL_FALSE, ctx.guild.id)
-
-		if not is_server and not is_global:
-			#if no server OR global tag exists
+		
+		if await self.get_server_tag(tag, ctx.guild.id):
+			table_name = 'server'
+		elif await self.get_global_tag(tag):
+			table_name = 'global'
+		else:
 			await ctx.send(":no_entry: Tag `{}` does not exist!".format(tag))
-		elif not is_server:
-			t = await self.get_tag(tag, self.GLOBAL_TRUE)
-			t = t[0][2] #0 = index of first tuple in list; 2 = 'content' in row
-			await ctx.send(t)
-		elif is_server:
-			t = await self.get_tag(tag, self.GLOBAL_FALSE, ctx.guild.id)
-			t = t[0][2]
-			await ctx.send(t)
+			return
+
+		sql_q = "SELECT content FROM {}_tags WHERE tag=?".format(table_name)
+		result = await self.db.query(sql_q, (tag,))
+		result = result.fetchall()[0]
+
+		await ctx.send(result['content'])
 
 	@tag.command(name='add', aliases=['create'])
 	async def add_tag(self, ctx, tag: TagName, content: commands.clean_content):
-		"""If no tag exists add global tag; If global tag exists add server tag
-			0 = false 1 = true"""
+		"""adds a tag"""
 		tag = await TagName().convert(ctx, tag)
-		is_global = await self.get_tag(tag, self.GLOBAL_TRUE)
-		is_server = await self.get_tag(tag, self.GLOBAL_FALSE, ctx.guild.id)
 
-		if not is_global and not is_server:
-			#No global or server tag so we add a global tag
-			await self.tag_add(ctx.author.id, tag, content, ctx.guild.id, self.GLOBAL_TRUE)
-			await ctx.send(":white_check_mark: Added global tag `{}`".format(tag))
-		elif is_global and not is_server:
-			#Global tag exists but server tag does not so we add server tag
-			await self.tag_add(ctx.author.id, tag, content, ctx.guild.id, self.GLOBAL_FALSE)
-			await ctx.send(":white_check_mark: Added server tag `{}`".format(tag))
-		else:
+		#Tag already exists in server, return
+		if await self.get_global_server_tag(tag, ctx.guild.id) or await self.get_server_tag(tag, ctx.guild.id):
 			await ctx.send(":no_entry: Tag `{}` already exists!".format(tag))
+			return
+
+		if not await self.get_global_tag(tag) and not await self.get_server_tag(tag, ctx.guild.id):
+			#no global or server tag; add global tag
+			table_name = 'global'
+		elif await self.get_global_tag(tag) and not await self.get_server_tag(tag, ctx.guild.id): 
+			#global tag exists server tag doesnt; add server tag
+			table_name = 'server'
+
+
+		print(table_name)
+		sql_in = "INSERT INTO {}_tags VALUES (?, ?, ?, ?)".format(table_name)
+		await self.db.exec(sql_in, (ctx.author.id, tag, content, ctx.guild.id))
+		await ctx.send(":white_check_mark: Added {} tag `{}`".format(table_name, tag))
 
 	@tag.command(name='remove', aliases=['del', 'delete'])
 	async def del_tag(self, ctx, tag: TagName):
 		"""Delete a tag"""
 		tag = await TagName().convert(ctx, tag)
-		can_edit = await self.get_owner(ctx, tag)
-		sql_del = "DELETE FROM tags WHERE user=? AND tag=? AND server=?"
+		can_edit = await self.get_owner(ctx.author.id, tag, ctx.guild.id)
 
-		if not await self.tag_exists(ctx, tag, True):
-			return
+		table_name = await self.tag_table(tag, ctx.guild.id)
 
+		if not table_name:
+			await ctx.send(":no_entry: Tag `{}` does not exist!".format(tag))	
+			return	
+
+		sql_del = "DELETE FROM {}_tags WHERE user=? AND tag=? AND server=?".format(table_name) #Delete from table where tag exists
 		if can_edit:
 			await self.db.exec(sql_del, (ctx.author.id, tag, ctx.guild.id))
 			await ctx.send(":white_check_mark: Tag `{}` has been deleted.".format(tag))
 		else:
-			raise commands.CommandError("You don\'t own tag `{}`".format(tag))
+			await ctx.send(":no_entry: You don\'t own tag `{}`!".format(tag))
 
 	@tag.command(name='edit', aliases=['change'])
 	async def edit_tag(self, ctx, tag: TagName, content: commands.clean_content):
 		"""Edits the content of a tag"""
 		tag = await TagName().convert(ctx, tag)
-		can_edit = await self.get_owner(ctx, tag)
+		can_edit = await self.get_owner(ctx.author.id, tag, ctx.guild.id)
 
-		if not await self.tag_exists(ctx, tag, True):
-			return
+		table_name = await self.tag_table(tag, ctx.guild.id)
 
-		sql_e = "UPDATE tags SET content=? WHERE user=? AND tag=? AND server=?"
+		if not table_name:
+			await ctx.send(":no_entry: Tag `{}` does not exist!".format(tag))	
+			return	
+
+		sql_e = "UPDATE {}_tags SET content=? WHERE user=? AND tag=? AND server=?".format(table_name)
 		if can_edit:
 			await self.db.exec(sql_e, (content, ctx.author.id, tag, ctx.guild.id))
 			await ctx.send(":white_check_mark: Edited tag `{}`".format(tag))
 		else:
-			raise commands.CommandError("You don\'t own tag `{}`".format(tag))			
+			await ctx.send(":no_entry: You don\'t own tag `{}`!".format(tag))
 
 	@tag.command(name='forceremove', aliases=['fm', 'forcedelete'])
 	@is_admin()
@@ -222,11 +242,18 @@ class Tags:
 		"""Force removes a tag"""
 		tag = await TagName().convert(ctx, tag)
 
-		if not await self.tag_exists(ctx, tag, True):
+		table_name = await self.tag_table(tag, ctx.guild.id)
+
+		if not table_name:
+			await ctx.send(":no_entry: Tag `{}` does not exist!".format(tag))	
+			return	
+
+		if table_name == 'global' and not await self.get_global_server_tag(tag, ctx.guild.id):
+			await ctx.send(":no_entry: Only server tags or global tags created in this server can be removed!")
 			return
 
-		sql_del = "DELETE FROM tags WHERE tag=? AND server=?"
-		sql_q = "SELECT user FROM tags WHERE tag=? AND server=?"
+		sql_del = "DELETE FROM {}_tags WHERE tag=? AND server=?".format(table_name)
+		sql_q = "SELECT user FROM {}_tags WHERE tag=? AND server=?".format(table_name)
 
 		#Gets user id of owner of tag 
 		usr = await self.db.query(sql_q, (tag, ctx.guild.id))
@@ -241,39 +268,37 @@ class Tags:
 		"""Display owner of a tag"""
 		tag = await TagName().convert(ctx, tag)
 
-		if not await self.tag_exists(ctx, tag, False):
-			return
+		table_name = await self.tag_table(tag, ctx.guild.id)
 
-		sql_q = "SELECT user FROM tags WHERE tag=? AND server=?"
-		sql_g = "SELECT user FROM tags WHERE tag=? AND global=?"
+		if not table_name:
+			await ctx.send(":no_entry: Tag `{}` does not exist!".format(tag))
+			return	
 
-		global_result = await self.db.query(sql_g, (tag, self.GLOBAL_TRUE))
-		global_result = global_result.fetchall()
-
+		sql_q = "SELECT user FROM {}_tags WHERE tag=? AND server=?".format(table_name)
 		result = await self.db.query(sql_q, (tag, ctx.guild.id))
 		result = result.fetchall()
 
-		if global_result and result:
-			user = ctx.guild.get_member(result[0][0])
-		elif global_result:
-			user = ctx.guild.get_member(global_result[0][0])
-		else:
-			user = ctx.guild.get_member(result[0][0])
+		user = ctx.guild.get_member(result[0]['user'])
 
 		await ctx.send("`{}` owns tag `{}`".format(user, tag))
 
 	@tag.command(name='list')
 	async def list(self, ctx, member: discord.Member=None):
 		"""List a users tags"""
-		sql_q = "SELECT tag, server, global FROM tags WHERE user=?"
+		sql_q = """
+				SELECT * FROM server_tags WHERE user=?
+				UNION
+				SELECT * FROM global_tags WHERE user=?
+				"""
 		if member is None: 
 			mem = ctx.author 
 		else: 
 			mem = member
 
-		result = await self.db.query(sql_q, (mem.id,))
+		result = await self.db.query(sql_q, (mem.id, mem.id))
 		result = result.fetchall()
 
+		
 		await self.create_embed(ctx, result, member=mem)
 		
 
@@ -292,7 +317,57 @@ class Tags:
 
 		if result:
 			await self.create_embed(ctx, result)
-		
+
+	@tag.command(name='gift', aliases=['give'])
+	async def gift(self, ctx, tag: TagName, recipient: discord.Member):
+		tag = await TagName().convert(ctx, tag)
+
+		table_name = await self.tag_table(tag, ctx.guild.id)
+		if not table_name:
+			await ctx.send(":no_entry: Tag `{}` does not exist!".format(tag))
+			return
+
+		if not await self.get_owner(ctx.author.id, tag, ctx.guild.id):
+			await ctx.send(":no_entry: You don't own `{}`".format(tag))
+			return
+
+		sql_u = "UPDATE {}_tags SET user=? WHERE user=? AND tag=? AND server=?".format(table_name)
+		await ctx.send("{}, {} wants to gift you tag `{}`. Type **yes** to accept.".format(recipient.mention, ctx.author.mention, tag))
+
+		def check(msg):
+			return msg.content == "yes" and msg.author.id == recipient.id
+
+		while True:
+			try:
+				msg = await self.bot.wait_for('message', timeout=30, check=check)
+
+				await self.db.exec(sql_u, (recipient.id, ctx.author.id, tag, ctx.guild.id))
+				await ctx.send("`{}` now owns tag `{}`".format(recipient, tag))
+				break
+			except asyncio.TimeoutError:
+				break
+
+	@tag.command(name='source', aliases=['raw'])
+	async def source(self, ctx, tag: TagName):
+		tag = await TagName().convert(ctx, tag)
+
+		table_name = await self.tag_table(tag, ctx.guild.id)
+
+		if not table_name:
+			await ctx.send(":no_entry: Tag `{}` does not exist!".format(tag))	
+			return	
+
+		if table_name == 'global':
+			sql_q = "SELECT content FROM {}_tags WHERE tag=?".format(table_name)
+			result = await self.db.query(sql_q, (tag,))
+		else:
+			sql_q = "SELECT content FROM {}_tags WHERE tag=? AND server=?".format(table_name)
+			result = await self.db.query(sql_q, (tag, ctx.guild.id))
+
+		result = result.fetchall()
+
+
+		await ctx.send("```{}```".format(result[0]['content']))
 
 def setup(bot):
 	bot.add_cog(Tags(bot))
