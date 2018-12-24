@@ -1,5 +1,7 @@
 import discord
 import asyncio
+import os, io
+import magic
 
 from discord.ext import commands
 from utils.database import *
@@ -151,10 +153,25 @@ class Tags:
 				break
 				return
 
+	async def get_attach(self, attach):
+		for i in attach:
+			file = i.filename
+			size = i.size
+
+			if size > 8000000:
+				raise commands.CommandError('File is over 8MB! Bots cannot upload over 8MB!')
+
+			await i.save(file)
+			with open(file, 'rb') as img:
+				content = sqlite3.Binary(img.read())
+				os.remove(file)
+				return content
+			break
+
 	@commands.group(name='tag', aliases=['t'], invoke_without_command=True)
 	async def tag(self, ctx, tag: TagName):
 		"""If no server tag exists, display global tag"""
-		tag = await TagName().convert(ctx, tag)
+		#tag = await TagName().convert(ctx, tag)
 		
 		if await self.get_server_tag(tag, ctx.guild.id):
 			table_name = 'server'
@@ -167,13 +184,31 @@ class Tags:
 		sql_q = "SELECT content FROM {}_tags WHERE tag=?".format(table_name)
 		result = await self.db.query(sql_q, (tag,))
 		result = result.fetchall()[0]
+		
+		async with ctx.channel.typing():
+			if isinstance(result['content'], bytes):
+				file = result['content']
 
-		await ctx.send(result['content'])
+				with open("tmp", 'wb') as out:
+					out.write(file)
+
+				ext = magic.from_file('tmp', mime=True).split('/')[1]
+				os.remove('tmp')
+				file = discord.File(file, "tag."+ext)
+				await ctx.send(file=file)
+			else:
+				await ctx.send(result['content'])
 
 	@tag.command(name='add', aliases=['create'])
-	async def add_tag(self, ctx, tag: TagName, content: commands.clean_content):
+	async def add_tag(self, ctx, tag: TagName, content: commands.clean_content=None):
 		"""adds a tag"""
-		tag = await TagName().convert(ctx, tag)
+		#tag = await TagName().convert(ctx, tag)
+
+		if content is None and ctx.message.attachments:
+			async with ctx.channel.typing():
+				content = await self.get_attach(ctx.message.attachments)
+		elif content is None:
+			raise commands.UserInputError()
 
 		#Tag already exists in server, return
 		if await self.get_global_server_tag(tag, ctx.guild.id) or await self.get_server_tag(tag, ctx.guild.id):
@@ -188,7 +223,6 @@ class Tags:
 			table_name = 'server'
 
 
-		print(table_name)
 		sql_in = "INSERT INTO {}_tags VALUES (?, ?, ?, ?)".format(table_name)
 		await self.db.exec(sql_in, (ctx.author.id, tag, content, ctx.guild.id))
 		await ctx.send(":white_check_mark: Added {} tag `{}`".format(table_name, tag))
@@ -196,7 +230,7 @@ class Tags:
 	@tag.command(name='remove', aliases=['del', 'delete'])
 	async def del_tag(self, ctx, tag: TagName):
 		"""Delete a tag"""
-		tag = await TagName().convert(ctx, tag)
+		#tag = await TagName().convert(ctx, tag)
 		can_edit = await self.get_owner(ctx.author.id, tag, ctx.guild.id)
 
 		table_name = await self.tag_table(tag, ctx.guild.id)
@@ -213,10 +247,15 @@ class Tags:
 			await ctx.send(":no_entry: You don\'t own tag `{}`!".format(tag))
 
 	@tag.command(name='edit', aliases=['change'])
-	async def edit_tag(self, ctx, tag: TagName, content: commands.clean_content):
+	async def edit_tag(self, ctx, tag: TagName, content: commands.clean_content=None):
 		"""Edits the content of a tag"""
-		tag = await TagName().convert(ctx, tag)
+		#tag = await TagName().convert(ctx, tag)
 		can_edit = await self.get_owner(ctx.author.id, tag, ctx.guild.id)
+
+		if content is None and ctx.message.attachments:
+			content = await self.get_attach(ctx.message.attachments)
+		elif content is None:
+			raise commands.UserInputError()
 
 		table_name = await self.tag_table(tag, ctx.guild.id)
 
@@ -235,7 +274,7 @@ class Tags:
 	@is_admin()
 	async def forceremove(self, ctx, tag: TagName):
 		"""Force removes a tag"""
-		tag = await TagName().convert(ctx, tag)
+		#tag = await TagName().convert(ctx, tag)
 
 		table_name = await self.tag_table(tag, ctx.guild.id)
 
@@ -261,7 +300,7 @@ class Tags:
 	@tag.command(name='owner', aliases=['creator'])
 	async def owner(self, ctx, tag: TagName):
 		"""Display owner of a tag"""
-		tag = await TagName().convert(ctx, tag)
+		#tag = await TagName().convert(ctx, tag)
 
 		table_name = await self.tag_table(tag, ctx.guild.id)
 
@@ -344,7 +383,7 @@ class Tags:
 
 	@tag.command(name='source', aliases=['raw'])
 	async def source(self, ctx, tag: TagName):
-		tag = await TagName().convert(ctx, tag)
+		#tag = await TagName().convert(ctx, tag)
 
 		table_name = await self.tag_table(tag, ctx.guild.id)
 
@@ -361,8 +400,31 @@ class Tags:
 
 		result = result.fetchall()
 
-
 		await ctx.send("```{}```".format(result[0]['content']))
+
+	@tag.command(name='global')
+	async def global_tag(self, ctx, tag: TagName):
+		#tag = await TagName().convert(ctx, tag)
+
+		if not await self.get_global_tag(tag):
+			await ctx.send(":no_entry: Global tag `{}` doesn\'t exist!".format(tag))
+			return
+
+		sql_q = "SELECT content FROM global_tags WHERE tag=?"
+
+		result = await self.db.query(sql_q, (tag,))
+		result = result.fetchall()[0][0]
+
+		await ctx.send(result)
+
+	@commands.command()
+	async def att(self, ctx, content=None):
+		print(content)
+		att = ctx.message.attachments
+
+		if att:
+			for i in att:
+				print(i.size)
 
 def setup(bot):
 	bot.add_cog(Tags(bot))
