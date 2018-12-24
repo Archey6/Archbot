@@ -14,3 +14,4 @@ class TagName(commands.Converter):
 		if tag in self._reserved:
 			raise commands.CommandError('Sorry, that tag name is reserved!')
 		return self.make_lower(tag)
+
