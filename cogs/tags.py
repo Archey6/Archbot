@@ -417,14 +417,6 @@ class Tags:
 
 		await ctx.send(result)
 
-	@commands.command()
-	async def att(self, ctx, content=None):
-		print(content)
-		att = ctx.message.attachments
-
-		if att:
-			for i in att:
-				print(i.size)
 
 def setup(bot):
 	bot.add_cog(Tags(bot))
