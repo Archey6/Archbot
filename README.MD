@@ -6,6 +6,7 @@ Work in progress personal project bot
 - Token is stored in an environment variable `bot_token`
 - SQLite3 Database name is stored in `utils/database.py`
 - `python3.6 run.py` to start bot
+- `files/emojis` Directory should contain `.svg` files from `https://github.com/twitter/twemoji`
 
 # Commands 
 
